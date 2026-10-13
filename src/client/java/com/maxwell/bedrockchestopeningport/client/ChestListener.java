@@ -6,7 +6,7 @@ import net.minecraft.world.inventory.ChestMenu;
 
 public class ChestListener {
 
-    private static final boolean TEST_MODE = true;
+    private static final boolean TEST_MODE = false;
 
     private static boolean openedChestBr = false;
     private static boolean openedChestOb = false;
