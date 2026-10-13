@@ -1,9 +1,9 @@
 {
 	"required": true,
-	"package": "com.maxwell.bedrockchestopening.port.client.mixin",
+	"package": "com.maxwell.bedrockchestopeningport.client.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
-		"ExampleClientMixin"
+      "ClientPacketListenerMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

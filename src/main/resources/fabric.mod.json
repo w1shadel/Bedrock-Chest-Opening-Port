@@ -5,7 +5,7 @@
 	"name": "Bedrock Chest Opening",
 	"description": "This is an example description! Tell everyone what your mod is about!",
 	"authors": [
-		"Me!"
+		"Maxwell"
 	],
 	"contact": {
 		"homepage": "https://fabricmc.net/",
@@ -16,14 +16,13 @@
 	"environment": "*",
 	"entrypoints": {
 		"main": [
-			"com.maxwell.bedrockchestopening.port.BedrockChestOpening"
+			"com.maxwell.bedrockchestopeningport.BedrockChestOpening"
 		],
 		"client": [
-			"com.maxwell.bedrockchestopening.port.client.BedrockChestOpeningClient"
+			"com.maxwell.bedrockchestopeningport.client.BedrockChestOpeningClient"
 		]
 	},
 	"mixins": [
-		"bedrock-chest-opening.mixins.json",
 		{
 			"config": "bedrock-chest-opening.client.mixins.json",
 			"environment": "client"
