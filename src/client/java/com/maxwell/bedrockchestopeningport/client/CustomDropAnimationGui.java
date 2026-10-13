@@ -4,6 +4,14 @@ import com.maxwell.bedrockchestopeningport.client.DataUtil.DropRarity;
 import com.maxwell.bedrockchestopeningport.client.DataUtil.DungeonBossLootManager;
 import com.maxwell.bedrockchestopeningport.client.DataUtil.RarityResolver;
 import com.maxwell.bedrockchestopeningport.client.config.MyConfig;
+import com.maxwell.bedrockchestopeningport.client.api.base.RouletteEffect;
+import com.maxwell.bedrockchestopeningport.client.api.base.RouletteEffectSelector;
+import com.maxwell.bedrockchestopeningport.client.api.effects.AcceleratingRouletteEffect;
+import com.maxwell.bedrockchestopeningport.client.api.effects.FakeoutRouletteEffect;
+import com.maxwell.bedrockchestopeningport.client.api.effects.FlashRouletteEffect;
+import com.maxwell.bedrockchestopeningport.client.api.effects.NearMissRouletteEffect;
+import com.maxwell.bedrockchestopeningport.client.api.effects.NormalRouletteEffect;
+import com.maxwell.bedrockchestopeningport.client.api.effects.StagedDecelerationRouletteEffect;
 import io.netty.util.internal.ThreadLocalRandom;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -35,6 +43,9 @@ public class CustomDropAnimationGui extends Screen {
     private float offsetX = 0f;
     private int lastBoxDistance = 0;
     private boolean hasShownResult = false;
+    private boolean completionHandled = false;
+    private RouletteEffect activeEffect;
+    private float effectFlashAlpha = 0.0f;
     private float itemBoxWidth, itemBoxHeight, spacing;
     private float stopPoint, slowPoint;
     private float randStop, randSlow;
@@ -75,15 +86,47 @@ public class CustomDropAnimationGui extends Screen {
         carouselItems.set(rewardSlot, actualRewardStack);
     }
 
+    
     private double velocityFromX(double x) {
-        double X = stopPoint - slowPoint;
-        double T = slowTime;
-        if (x <= 0) return X * 3 / T;
-        if (x >= X) return 0;
-        double normX = x / X;
-        double t = T * (1 - Math.cbrt(1 - normX));
-        double nt = t / T;
-        return X * 3 * Math.pow(1 - nt, 2) / T;
+        double distance = stopPoint - slowPoint;
+        double duration = Math.max(0.05, slowTime);
+        if (distance <= 0 || x >= distance) return 0.0;
+        if (x <= 0) return distance * 3.0 / duration;
+
+        double normalizedDistance = Math.min(1.0, x / distance);
+        double normalizedTime = 1.0 - Math.cbrt(1.0 - normalizedDistance);
+        return distance * 3.0 * Math.pow(1.0 - normalizedTime, 2.0) / duration;
+    }
+
+    public float getOffset() { return offsetX; }
+    public void setOffset(float offset) {
+        this.offsetX = Math.max(0.0f, Math.min(stopPoint, offset));
+    }
+    public void addOffset(float amount) { setOffset(offsetX + amount); }
+    public float getStopPoint() { return stopPoint; }
+    public float getSlowPoint() { return slowPoint; }
+    public float getSpacing() { return spacing; }
+
+    public double calculateVelocity(double distanceFromSlowPoint) {
+        return velocityFromX(distanceFromSlowPoint);
+    }
+
+    public double calculateVelocityCustom(double distanceFromSlowPoint, float targetStopPoint) {
+        double distance = targetStopPoint - slowPoint;
+        double duration = Math.max(0.05, slowTime);
+        if (distance <= 0 || distanceFromSlowPoint >= distance) return 0.0;
+        if (distanceFromSlowPoint <= 0) return distance * 3.0 / duration;
+        double normalizedDistance = Math.min(1.0, distanceFromSlowPoint / distance);
+        double normalizedTime = 1.0 - Math.cbrt(1.0 - normalizedDistance);
+        return distance * 3.0 * Math.pow(1.0 - normalizedTime, 2.0) / duration;
+    }
+
+    
+    public void playRewardSoundAndExit() {
+        if (completionHandled) return;
+        completionHandled = true;
+        playRewardSound(rewardRarity.getIndex());
+        Minecraft.getInstance().gui.setScreen(originalScreen);
     }
 
     @Override
@@ -94,7 +137,22 @@ public class CustomDropAnimationGui extends Screen {
         float itemBoxPadding = this.width / 64f;
         this.spacing = itemBoxWidth + itemBoxPadding;
         this.stopPoint = 41 * spacing + randStop * itemBoxWidth;
-        this.slowPoint = stopPoint - ((slowDistance + randSlow) * spacing);
+        float effectiveSlowDistance = Math.max(1.0f, slowDistance + randSlow);
+        this.slowPoint = Math.max(0.0f, stopPoint - effectiveSlowDistance * spacing);
+
+
+        this.activeEffect = RouletteEffectSelector.select(
+                List.of(
+                        new FakeoutRouletteEffect(),
+                        new AcceleratingRouletteEffect(),
+                        new NearMissRouletteEffect(),
+                        new FlashRouletteEffect(),
+                        new StagedDecelerationRouletteEffect()
+                ),
+                new NormalRouletteEffect(),
+                this
+        );
+        this.activeEffect.onStart(this);
     }
 
     @Override
@@ -106,29 +164,47 @@ public class CustomDropAnimationGui extends Screen {
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a) {
         super.extractRenderState(graphics, mouseX, mouseY, a);
         long now = System.nanoTime();
-        if (lastFrameTime == 0) lastFrameTime = now;
+        if (lastFrameTime == 0L) lastFrameTime = now;
         float deltaTime = (now - lastFrameTime) / 1_000_000_000f;
-        deltaTime = Math.min(deltaTime, 0.05f);
+        deltaTime = Math.max(0.0f, Math.min(deltaTime, 0.05f));
         lastFrameTime = now;
+
         if (!hasShownResult) {
-            currentScrollSpeed = (float) velocityFromX(offsetX - slowPoint);
-            offsetX += currentScrollSpeed * deltaTime;
-            if (currentScrollSpeed == 0) {
+            if (activeEffect == null) {
+                activeEffect = new NormalRouletteEffect();
+                activeEffect.onStart(this);
+            }
+            activeEffect.update(this, deltaTime);
+            if (activeEffect.isFinished()) {
+                offsetX = stopPoint;
                 hasShownResult = true;
             }
         }
-        if (hasShownResult) {
-            playRewardSound(rewardRarity.getIndex());
-            Minecraft.getInstance().gui.setScreen(this.originalScreen);
-            return;
-        }
+
         float centerX = this.width / 2f;
         float centerY = this.height / 2f;
         drawCarousel(graphics, centerX, centerY);
         renderJudgementLine(graphics, centerX, centerY);
+        drawEffectOverlay(graphics);
+
+        if (hasShownResult) {
+            if (!completionHandled) activeEffect.onComplete(this);
+            return;
+        }
+
         int fadeWidth = this.width / 6;
         graphics.fillGradient(0, 0, fadeWidth, this.height, 0xFF000000, 0x00000000);
         graphics.fillGradient(this.width - fadeWidth, 0, this.width, this.height, 0x00000000, 0xFF000000);
+    }
+
+    public void setEffectFlashAlpha(float alpha) {
+        this.effectFlashAlpha = Math.max(0.0f, Math.min(1.0f, alpha));
+    }
+
+    private void drawEffectOverlay(GuiGraphicsExtractor graphics) {
+        if (effectFlashAlpha <= 0.001f) return;
+        int alpha = Math.max(0, Math.min(255, Math.round(effectFlashAlpha * 255.0f)));
+        graphics.fill(0, 0, this.width, this.height, (alpha << 24) | 0x00FFD54A);
     }
 
     private void drawCarousel(GuiGraphicsExtractor graphics, float centerX, float centerY) {
@@ -174,11 +250,13 @@ public class CustomDropAnimationGui extends Screen {
                 (int) (centerY + lineHeight / 2),
                 0xFFFFA500
         );
-        int boxDistance = (int) offsetX % (int) spacing;
-        if (boxDistance < lastBoxDistance) {
-            Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+        int boxIndex = spacing > 0.0f ? (int) Math.floor(offsetX / spacing) : 0;
+        if (lastBoxDistance >= 0 && boxIndex > lastBoxDistance) {
+            Minecraft.getInstance().getSoundManager().play(
+                    SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F)
+            );
         }
-        lastBoxDistance = boxDistance;
+        lastBoxDistance = boxIndex;
     }
 
     private int getBoxColor(DropRarity rarity) {

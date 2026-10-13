@@ -4,13 +4,8 @@ import com.maxwell.bedrockchestopeningport.client.DataUtil.DungeonBossLootManage
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.ChestMenu;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.scores.DisplaySlot;
 import net.minecraft.world.scores.Objective;
 import net.minecraft.world.scores.PlayerTeam;
@@ -21,7 +16,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ChestListener {
-    private static final boolean TEST_MODE = true;
+    private static final boolean TEST_MODE = false;
     private static String curFloor = "F7";
     private static boolean openedChestBr = false;
     private static boolean openedChestOb = false;
@@ -45,7 +40,7 @@ public class ChestListener {
         }
         String rawTitle = screen.getTitle().getString();
         String cleanTitle = rawTitle.replaceAll("§[0-9a-fk-orA-FK-OR]", "").trim();
-        System.out.println("[DEBUG-BCCO] Cleaned Title: '" + cleanTitle + "'");
+        if (com.maxwell.bedrockchestopeningport.client.config.MyConfig.isDebugMode()) System.out.println("[BCCO] Cleaned title: '" + cleanTitle + "'");
         if (cleanTitle.contains("Croesus")) {
             isCroesusSession = true;
             openedChestBr = false;
@@ -56,10 +51,13 @@ public class ChestListener {
             String detected = parseFloorFromTitle(cleanTitle);
             if (detected != null) {
                 curFloor = detected;
-                System.out.println("[DEBUG-BCCO] Croesus Detected Floor from Title: " + curFloor);
+                isCroesusSession = false;
+                openedChestBr = false;
+                openedChestOb = false;
+                if (com.maxwell.bedrockchestopeningport.client.config.MyConfig.isDebugMode()) {
+                    System.out.println("[BCCO] Detected dungeon floor: " + curFloor);
+                }
             }
-            openedChestBr = false;
-            openedChestOb = false;
             return screen;
         }
         if (!isCroesusSession) {
@@ -76,27 +74,18 @@ public class ChestListener {
                 if (!openedChestOb) openedChestOb = true;
                 else return screen;
             }
-            System.out.println("[DEBUG-BCCO] Intercepting Dungeon Chest: " + cleanTitle + " (Floor: " + curFloor + ")");
+            if (com.maxwell.bedrockchestopeningport.client.config.MyConfig.isDebugMode()) {
+                System.out.println("[BCCO] Intercepting dungeon chest: " + cleanTitle + " (floor: " + curFloor + ")");
+            }
             return new InterceptChestScreen((AbstractContainerScreen<ChestMenu>) containerScreen, curFloor, chestType, false);
         }
         return screen;
     }
 
-    private static ItemStack createTestItem(String id, Item material, String displayName) {
-        ItemStack stack = new ItemStack(material);
-        stack.set(DataComponents.CUSTOM_NAME, Component.literal(displayName));
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, root -> {
-            CompoundTag extra = new CompoundTag();
-            extra.putString("id", id);
-            root.put("ExtraAttributes", extra);
-        });
-        return stack;
-    }
-
     private static String parseFloorFromTitle(String title) {
         boolean isMaster = title.contains("Master");
-        String[] roman = {"VII", "VI", "IV", "V", "III", "II", "I"};
-        int[] num = {7, 6, 4, 5, 3, 2, 1};
+        String[] roman = {"VII", "VI", "V", "IV", "III", "II", "I"};
+        int[] num = {7, 6, 5, 4, 3, 2, 1};
         for (int i = 0; i < roman.length; i++) {
             if (title.matches(".*\\b" + roman[i] + "\\b.*")) {
                 return (isMaster ? "M" : "F") + num[i];
@@ -125,8 +114,13 @@ public class ChestListener {
             if (line.contains("The Catacombs (")) {
                 Matcher m = Pattern.compile("\\((.*?)\\)").matcher(line);
                 if (m.find()) {
-                    curFloor = m.group(1).trim().toUpperCase();
-                    System.out.println("[DEBUG-BCCO] Scoreboard Detected Dungeon Floor: " + curFloor);
+                    String candidate = m.group(1).trim().toUpperCase(java.util.Locale.ROOT);
+                    if (candidate.matches("[FM][1-7]")) {
+                        curFloor = candidate;
+                        if (com.maxwell.bedrockchestopeningport.client.config.MyConfig.isDebugMode()) {
+                            System.out.println("[BCCO] Scoreboard detected dungeon floor: " + curFloor);
+                        }
+                    }
                 }
                 break;
             }
@@ -134,6 +128,7 @@ public class ChestListener {
     }
 
     public static void reset() {
+        curFloor = "F7";
         openedChestBr = false;
         openedChestOb = false;
         isCroesusSession = false;
